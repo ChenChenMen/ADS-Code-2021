@@ -78,7 +78,6 @@ def main():
 
 	while (~detectApogee(burnoutTime)):
 		servoWrite += (prediction(),);
-		#print(servoWrite)
 
 ''' setup the system before the main function 
 	
