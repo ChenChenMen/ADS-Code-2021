@@ -23,15 +23,16 @@ BURNOUT_THRESHOLD = 0; ## in Gs
 APOGEE_THRESHOLD = 1; ## in Gs
 
 # Variables Associated with ODE--------------------------------------------------------
-# from 0 to 20 seconds with 100 evenly spaced intervals
-timeInterval = np.linspace(0, 20, 100);
+# from 0 to 20 seconds with 50 evenly spaced intervals
+step = 50;
+timeInterval = np.linspace(0, 20, step);
 
 # Constants
 GAMMA = 1.4;
 RBAR = R / M;
 
 # Flap CD
-flapPercentCD;
+flapPercentCD = 0;
 
 # Launch Day Input Variables
 P_GROUND = 29.91 * 3386.39;
@@ -47,6 +48,9 @@ CD_FLAPS = 1.28;
 ONE_PLUS_GM_OVER_RL0 = 1 + (g*M / R / L0);
 NEGATIVE_ONE_OVER_2M0 = -1 / 25.207000000000000 / 2;
 
+# Initial servo write
+servoWrite = (60,);
+
 # Initial Conditions
 X0 = 0; ## initial horizontal position meters
 V0 = 248.93; ## burnout velocity, m/s
@@ -57,10 +61,9 @@ Y_prev = [X0, Z0, THETA0, V0];
 Y_current = [39.3743811851986, 1433.08267455424, 1.40553400310464, 229.313640927776]; ## one timestep of the ODE
 
 ''' main '''
-if __name__ == "__main__":
-	main();
-
 def main():
+	global servoWrite;
+
 	# Runs the system setup
 	setup();
 
@@ -73,9 +76,9 @@ def main():
 	# servo setup and record its seted value
 	servoWrite = (108,);
 
-	while (!detectApogee(burnoutTime)):
-		servoWrite = servoWrite + (prediction(),);
-
+	while (~detectApogee(burnoutTime)):
+		servoWrite += (prediction(),);
+		#print(servoWrite)
 
 ''' setup the system before the main function 
 	
@@ -116,6 +119,8 @@ def detectApogee(burnoutTime):
 
 	'''
 def prediction():
+	global servoWrite;
+
 	finalResult = [];
 	minDiff = 3048;
 	minIndex = 0;
@@ -124,7 +129,7 @@ def prediction():
 
 		if (abs(finalResult[i] - 3048) < minDiff):
 			minIndex = i;
-			minDiff = finalResult[i];
+			minDiff = abs(finalResult[i] - 3048);
 
 	startP = (minIndex * .25) - .1;
 	specificResult = [];
@@ -136,12 +141,12 @@ def prediction():
 
 		if (abs(specificResult[i] - 3048) < minDiff):
 			minIndex = i;
-			minDiff = specificResult[i];
+			minDiff = abs(specificResult[i] - 3048);
 
 	# Converts Flap Percentages to Servo actuations
 	# Numbers might change based on ADS system updates
 	sPred = ((startP + (0.05 * minIndex)) * 50) + 60;
-	if (sPred > 60 && sPred < 110):
+	if (sPred > 60 and sPred < 110):
 		servoWrite += (sPred,);
 
 	# Shall be an output to print out information
@@ -152,6 +157,7 @@ def prediction():
 ''' This method solves the coupled equations using scipy.integrate
 	
 	@param: what flap percent that the rocket has currently
+			input scale from 0 to 1
 	@return: the final altitude of the state vector after 20 seconds from calcs
 
 	'''
@@ -165,12 +171,14 @@ def odeSolver(flapPercent):
 
 	flapPercentCD = flapPercent * 7.656 * 0.00064516 / 2 * 1.28;
 
+	# Update Y_current
 	complementaryFilter();
 
-	Y_current = odeint(ODE, Y_current, timeInterval);
+	Y_prediction = odeint(ODE, Y_current, timeInterval);
 
-	if (Y_current[1] > maxAlt):
-		maxAlt = Y_current[1];
+	for i in range(step):
+		if (Y_prediction[i][1] > maxAlt):
+			maxAlt = Y_prediction[i][1];
 
 	return maxAlt;
 
@@ -192,16 +200,21 @@ def ODE(Y, t):
 
 	dv_dt = (NEGATIVE_ONE_OVER_2M0 * (RHO_GROUND * ((1 - L0 * Y[1] / T_GROUND)**ONE_PLUS_GM_OVER_RL0))\
 		* (Y[3]**2)) * (((30.8451 * 0.00064516) * (0.44562314583995 + -0.290001570655917 * Y[3]\
-			math.sqrt(R * GAMMA * (T_GROUND + L0 * Y[1])) + 0.561689194232028 * (Y[3]**2) / R \
+			/ math.sqrt(R * GAMMA * (T_GROUND + L0 * Y[1])) + 0.561689194232028 * (Y[3]**2) / R \
 			/ GAMMA / (T_GROUND + L0 * Y[1]))) + flapPercentCD) - (g * math.sin(Y[2]));
 
 	return [dx_dt, dz_dt, dtheta_dt, dv_dt];
 
 ''' This method takes data from two sensors and applies a complementary filter
 	to mauck sure that we get more accurate data
+
+	Update current state vector
 	
 	Filter update expected
 	Blank for now'''
 def complementaryFilter():
 	global Y_current;
 	pass;
+
+if __name__ == "__main__":
+	main();
