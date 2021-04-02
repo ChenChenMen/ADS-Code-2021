@@ -12,6 +12,7 @@ LSM6DS33_ADDR = 0x6b      # Gyrometer / accelerometer
 # LSM6DS33 gyroscope and accelerometer control registers
 LSM6DS33_CTRL1_XL = 0x10  # Acceleration sensor control
 LSM6DS33_CTRL2_G = 0x11  # Angular rate sensor (gyroscope) control
+LSM6DS33_CTRL9_XL = 0X18
 
 # INT 1 pin control
 LSM6DS33_INT1_CTRL = 0x0d
@@ -31,13 +32,25 @@ LSM6DS33_OUTY_H_XL = 0x2B  # Accelerometer roll axis (Y) output, high byte
 LSM6DS33_OUTZ_L_XL = 0x2C  # Accelerometer yaw axis (Z) output, low byte
 LSM6DS33_OUTZ_H_XL = 0x2D  # Accelerometer yaw axis (Z) output, high byte
 
+# Gyroscope dps/LSB for 1000 dps full scale
+GYRO_GAIN = 35.0
+
+# Accelerometer conversion factor for +/- 4g full scale
+ACCEL_CONVERSION_FACTOR = 0.122
+
 ## enable the accelerometer
+# 0110 00 00 416Hz +-2g
 i2cBus.write_byte_data(LSM6DS33_ADDR, LSM6DS33_CTRL1_XL, 0x60)
 i2cBus.write_byte_data(LSM6DS33_ADDR, LSM6DS33_CTRL9_XL, 0x38)
-i2cBus.write_byte_data(LSM6DS33_ADDR, LSM6DS33_INT1_CTRL, 0)
+#i2cBus.write_byte_data(LSM6DS33_ADDR, LSM6DS33_INT1_CTRL, 0)
 
-accel_registers = [LSM6DS33_OUTX_L_G, LSM6DS33_OUTX_H_G, \
+
+
+gyro_registers = [LSM6DS33_OUTX_L_G, LSM6DS33_OUTX_H_G, \
 LSM6DS33_OUTY_L_G, LSM6DS33_OUTY_H_G, LSM6DS33_OUTZ_L_G, LSM6DS33_OUTZ_H_G]
+
+accel_registers = [LSM6DS33_OUTX_L_XL, LSM6DS33_OUTX_H_XL, \
+LSM6DS33_OUTY_L_XL, LSM6DS33_OUTY_H_XL, LSM6DS33_OUTZ_L_XL, LSM6DS33_OUTZ_H_XL]
 
 def read_3d_sensor(address, registers):
 	""" Return a vector with the combined raw signed 16 bit values
@@ -85,6 +98,7 @@ def combine_signed_xlo_lo_hi(xlo_byte, lo_byte, hi_byte):
 def get_accelerometer_raw():
 	""" Return a 3D vector of raw accelerometer data.
 	"""
+	is_accel_enabled = True;
 
 	# Check if accelerometer has been enabled
 	if not is_accel_enabled:
@@ -102,5 +116,52 @@ def get_accelerometer_g_forces():
 
 	return [x_val, y_val, z_val]
 
+def get_gyroscope_raw():
+	""" Return a 3D vector of raw gyro data.
+	"""
+	# Check if gyroscope has been enabled
+	if not is_gyro_enabled:
+		raise(Exception('Gyroscope is not enabled!'))
+
+	sensor_data = read_3d_sensor(LSM6DS33_ADDR, gyro_registers)
+
+	is_gyro_calibrated = False
+
+	# Return the vector
+	if is_gyro_calibrated:
+		calibrated_gyro_data = sensor_data
+		calibrated_gyro_data[0] -= gyro_cal[0]
+		calibrated_gyro_data[1] -= gyro_cal[1]
+		calibrated_gyro_data[2] -= gyro_cal[2]
+		return calibrated_gyro_data
+	else:
+		return sensor_data
+
+def get_gyro_angular_velocity():
+	""" Return a 3D vector of the angular velocity measured by the gyro
+		in degrees/second.
+	"""
+
+	is_gyro_calibrated = False
+	is_gyro_enabled = True
+
+	# Check if gyroscope has been enabled
+	if not is_gyro_enabled:
+		raise(Exception('Gyroscope is not enabled!'))
+
+	# Check if gyroscope has been calibrated
+	if not is_gyro_calibrated:
+		raise(Exception('Gyroscope is not calibrated!'))
+
+		gyro_data = get_gyroscope_raw()
+
+		gyro_data[0] = (gyro_data[0] * GYRO_GAIN) / 1000
+		gyro_data[1] = (gyro_data[1] * GYRO_GAIN) / 1000
+		gyro_data[2] = (gyro_data[2] * GYRO_GAIN) / 1000
+
+		return gyro_data
+
 while True:
 	print (get_accelerometer_g_forces())
+	print (get_gyro_angular_velocity())
+	print ()
